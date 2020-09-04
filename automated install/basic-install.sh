@@ -243,8 +243,39 @@ os_check() {
 
 # Compatibility
 distro_check() {
-# If apt-get is installed, then we know it's part of the Debian family
+
+if [[ -f "/etc/os-release" ]]; then
+
+  OS_LIKE_ID=$(cat /etc/os-release | grep "^ID_LIKE=" | cut -d '=' -f2- | tr -d '"')
+
+  if echo "$OS_LIKE_ID" | grep -qiE 'debian' ; then
+    distro_check_debian
+    return
+  elif echo "$OS_LIKE_ID" | grep -qiE 'rhel' ; then
+    distro_check_redhat
+    return
+  fi
+
+fi
+
+# Could not determine (supported) distribution using /etc/os-release, falling back to package manager method
+
+# If apt-get is installed, then we could assume it's part of the Debian family
 if is_command apt-get ; then
+    distro_check_debian
+# If apt-get is not found, check for rpm to see if it's a Red Hat family OS
+elif is_command rpm ; then
+    distro_check_redhat
+# If neither apt-get or yum/dnf package managers were found
+else
+    # it's not an OS we can support,
+    printf "  %b OS distribution not supported\\n" "${CROSS}"
+    # so exit the installer
+    exit
+fi
+}
+
+distro_check_debian() {
     # Set some global variables here
     # We don't set them earlier since the family might be Red Hat, so these values would be different
     PKG_MANAGER="apt-get"
@@ -349,9 +380,9 @@ if is_command apt-get ; then
         # lock (anymore)
         return 0
     }
+}
 
-# If apt-get is not found, check for rpm to see if it's a Red Hat family OS
-elif is_command rpm ; then
+distro_check_redhat() {
     # Then check if dnf or yum is the package manager
     if is_command dnf ; then
         PKG_MANAGER="dnf"
@@ -450,14 +481,6 @@ elif is_command rpm ; then
             printf "  %b Continuing installation with unsupported RPM based distribution\\n" "${INFO}"
         fi
     fi
-
-# If neither apt-get or yum/dnf package managers were found
-else
-    # it's not an OS we can support,
-    printf "  %b OS distribution not supported\\n" "${CROSS}"
-    # so exit the installer
-    exit
-fi
 }
 
 # A function for checking if a directory is a git repository
