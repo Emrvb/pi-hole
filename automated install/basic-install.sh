@@ -254,6 +254,9 @@ if [[ -f "/etc/os-release" ]]; then
   elif echo "$OS_LIKE_ID" | grep -qiE 'rhel' ; then
     distro_check_redhat
     return
+  elif echo "$OS_LIKE_ID" | grep -qiE 'suse' ; then
+    distro_check_suse
+    return
   fi
 
 fi
@@ -364,6 +367,9 @@ distro_check_debian() {
     # and config file
     LIGHTTPD_CFG="lighttpd.conf.debian"
 
+    # We're using APT
+    USING_APT=true
+
     # A function to check...
     test_dpkg_lock() {
         # An iterator used for counting loop iterations
@@ -392,12 +398,16 @@ distro_check_redhat() {
 
     PKG_INSTALL=("${PKG_MANAGER}" install -y)
     PKG_COUNT="${PKG_MANAGER} check-update | egrep '(.i686|.x86|.noarch|.arm|.src)' | wc -l"
+    PKG_CHECK_INSTALLED=("${PKG_MANAGER}" -q list installed)
     INSTALLER_DEPS=(git iproute newt procps-ng which chkconfig bind-utils)
     PIHOLE_DEPS=(cronie curl findutils nmap-ncat sudo unzip libidn2 psmisc sqlite libcap)
     PIHOLE_WEB_DEPS=(lighttpd lighttpd-fastcgi php-common php-cli php-pdo php-xml php-json php-intl)
     LIGHTTPD_USER="lighttpd"
     LIGHTTPD_GROUP="lighttpd"
     LIGHTTPD_CFG="lighttpd.conf.fedora"
+    # We won't be using APT
+    USING_APT=false
+
     # If the host OS is Fedora,
     if grep -qiE 'fedora|fedberry' /etc/redhat-release; then
         # all required packages should be available by default with the latest fedora release
@@ -481,6 +491,24 @@ distro_check_redhat() {
             printf "  %b Continuing installation with unsupported RPM based distribution\\n" "${INFO}"
         fi
     fi
+}
+
+distro_check_suse() {
+
+    PKG_MANAGER="zypper"
+
+    PKG_INSTALL=("${PKG_MANAGER}" install -y)
+    PKG_COUNT="${PKG_MANAGER} list-updates | egrep '(.i686|.x86|.noarch|.arm|.src)' | wc -l"
+    PKG_CHECK_INSTALLED=("${PKG_MANAGER}" se --installed-only -x )
+    INSTALLER_DEPS=(git iproute2 newt procps which bind-utils)
+    PIHOLE_DEPS=(cronie curl findutils netcat-openbsd sudo unzip libidn2-0 psmisc sqlite3 libcap2)
+    PIHOLE_WEB_DEPS=(lighttpd php7 php7-pdo php7-openssl php7-json php7-intl php7-fastcgi)
+    LIGHTTPD_USER="lighttpd"
+    LIGHTTPD_GROUP="lighttpd"
+    LIGHTTPD_CFG="lighttpd.conf.fedora"
+    # We won't be using APT
+    USING_APT=false
+
 }
 
 # A function for checking if a directory is a git repository
@@ -1750,7 +1778,7 @@ install_dependent_packages() {
     # amount of download traffic.
     # NOTE: We may be able to use this installArray in the future to create a list of package that were
     # installed by us, and remove only the installed packages, and not the entire list.
-    if is_command apt-get ; then
+    if [[ "${USING_APT}" == true ]]; then
         # For each package,
         for i in "$@"; do
             printf "  %b Checking for %s..." "${INFO}" "${i}"
@@ -1776,7 +1804,7 @@ install_dependent_packages() {
     # Install Fedora/CentOS packages
     for i in "$@"; do
         printf "  %b Checking for %s..." "${INFO}" "${i}"
-        if "${PKG_MANAGER}" -q list installed "${i}" &> /dev/null; then
+        if "${PKG_CHECK_INSTALLED[@]}" "${i}" &> /dev/null; then
             printf "%b  %b Checking for %s\\n" "${OVER}" "${TICK}" "${i}"
         else
             printf "%b  %b Checking for %s (will be installed)\\n" "${OVER}" "${INFO}" "${i}"
